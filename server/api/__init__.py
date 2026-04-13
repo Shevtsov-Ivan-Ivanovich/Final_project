@@ -6,6 +6,7 @@ from server.api.items import items_bp
 from server.api.game_contexts import contexts_bp
 from server.api.logs import logs_bp
 from server.api.game import game_bp
+from server.api.polling import polling_bp 
 
 __all__ = [
     'auth_bp',
@@ -14,5 +15,6 @@ __all__ = [
     'items_bp',
     'contexts_bp',
     'logs_bp',
-    'game_bp'
+    'game_bp',
+    'polling_bp'
 ]

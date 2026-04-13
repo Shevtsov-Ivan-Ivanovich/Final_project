@@ -10,4 +10,5 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Настройки CORS
-    CORS_ORIGINS = ["http://localhost:5001", "http://127.0.0.1:5001"]
+    CORS_ORIGINS = ["http://localhost:5000", "http://127.0.0.1:5000", "http://192.168.10.163:5000"]
+    CORS_ALLOW_ALL_ORIGINS = True 

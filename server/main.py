@@ -1,20 +1,24 @@
 # server/main.py
-from flask import Flask, jsonify
+import sys
+import io
+
+# Настройка кодировки для Windows
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+
 from flask_cors import CORS
-from flask_socketio import SocketIO
+from flask import Flask, jsonify
 from server.config import Config
 from server.models import db, User, Item
 
 # Создаем приложение
 app = Flask(__name__)
 app.config.from_object(Config)
-CORS(app, origins=["http://localhost:5001", "http://127.0.0.1:5001"])
+CORS(app, supports_credentials=True, origins="*")
 
 # Инициализация БД
 db.init_app(app)
-
-# WebSocket
-socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Импортируем API Blueprints
 from server.api.auth import auth_bp
@@ -23,6 +27,8 @@ from server.api.sessions import sessions_bp
 from server.api.items import items_bp
 from server.api.game_contexts import contexts_bp
 from server.api.logs import logs_bp
+from server.api.game import game_bp
+from server.api.polling import polling_bp
 
 # Регистрируем Blueprints
 app.register_blueprint(auth_bp)
@@ -31,10 +37,8 @@ app.register_blueprint(sessions_bp)
 app.register_blueprint(items_bp)
 app.register_blueprint(contexts_bp)
 app.register_blueprint(logs_bp)
-
-# Регистрируем WebSocket обработчики
-from server.socket_routes import register_socket_handlers
-register_socket_handlers(socketio, db, logs_bp)
+app.register_blueprint(game_bp)
+app.register_blueprint(polling_bp)
 
 
 @app.route('/api/health', methods=['GET'])
@@ -51,22 +55,22 @@ def init_db():
         if Item.query.count() == 0:
             starter_items = [
                 Item(name='Рваная рубашка', description='Простая рубашка', 
-                     item_type='armor', slot='body', icon='👕'),
+                     item_type='armor', slot='body', icon='[Shirt]', is_equippable=True),
                 Item(name='Деревянный меч', description='Тренировочный меч', 
-                     item_type='weapon', slot='weapon', effects={'strength': 1}, icon='⚔️'),
+                     item_type='weapon', slot='weapon', effects={'strength': 1}, icon='[Sword]', is_equippable=True),
                 Item(name='Кожаные сапоги', description='Обычные сапоги', 
-                     item_type='armor', slot='feet', effects={'dexterity': 1}, icon='👢'),
+                     item_type='armor', slot='feet', effects={'dexterity': 1}, icon='[Boots]', is_equippable=True),
                 Item(name='Целительное зелье', description='Восстанавливает 10 HP', 
-                     item_type='consumable', is_equippable=False, effects={'heal_hp': 10}, icon='🧪'),
+                     item_type='consumable', is_equippable=False, effects={'heal_hp': 10}, icon='[Potion]'),
                 Item(name='Магическое зелье', description='Восстанавливает 5 MP', 
-                     item_type='consumable', is_equippable=False, effects={'heal_mp': 5}, icon='🧪'),
+                     item_type='consumable', is_equippable=False, effects={'heal_mp': 5}, icon='[Potion]'),
             ]
             
             for item in starter_items:
                 db.session.add(item)
             
             db.session.commit()
-            print("Базовые предметы добавлены")
+            print("[DB] Starter items added")
         
         # Создаем админа если нет пользователей
         if User.query.count() == 0:
@@ -78,15 +82,23 @@ def init_db():
             admin.set_password("admin123")
             db.session.add(admin)
             db.session.commit()
-            print("Администратор создан: admin / admin123")
+            print("[DB] Admin created: admin / admin123")
         
-        print("База данных инициализирована")
+        print("[DB] Database initialized")
 
 
 if __name__ == '__main__':
     init_db()
     print("=" * 50)
-    print("Сервер ДПЖ запущен")
-    print("Адрес: http://localhost:5000")
+    print("DPJ Server started (HTTP Polling)")
+    print("Address: http://localhost:5000")
     print("=" * 50)
-    socketio.run(app, debug=False, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    
+    # Выводим все зарегистрированные маршруты для отладки
+    print("\n[ROUTES] Registered routes:")
+    for rule in app.url_map.iter_rules():
+        methods = ','.join(sorted(rule.methods - {'HEAD', 'OPTIONS'}))
+        print(f"   {methods:10} {rule.rule}")
+    
+    print("\n" + "=" * 50)
+    app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)

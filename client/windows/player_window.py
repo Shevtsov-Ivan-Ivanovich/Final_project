@@ -5,7 +5,8 @@ from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QGroupBox, QGridLayout, QProgressBar, QDialog)
 from PyQt5.QtCore import Qt, QTimer
 from client.api_client import api_client
-from client.socket_client import socket_client
+from client.socket_client import SocketClient  # Импортируем КЛАСС
+from client.config_manager import config_manager
 
 
 class PlayerWindow(QWidget):
@@ -16,10 +17,20 @@ class PlayerWindow(QWidget):
         self.character_data = character_data
         self.inventory = []
         
+        # СОЗДАЁМ ЭКЗЕМПЛЯР SocketClient
+        self.socket_client = SocketClient()
+        
+        print(f"[PLAYER] ========== PLAYER WINDOW INIT ==========")
+        print(f"[PLAYER] User: {user_data.get('username')} (ID: {user_data.get('id')})")
+        print(f"[PLAYER] Session: {session_data.get('name')} (ID: {session_data.get('id')})")
+        print(f"[PLAYER] Character: {character_data.get('name')} (ID: {character_data.get('id')})")
+        
         self.initUI()
         self.setup_socket()
         self.connect_to_session()
         self.load_inventory()
+        
+        print(f"[PLAYER] PlayerWindow initialized successfully")
     
     def initUI(self):
         self.setWindowTitle(f"ДПЖ - Игрок | {self.character_data['name']} | Сессия: {self.session_data['name']}")
@@ -150,7 +161,6 @@ class PlayerWindow(QWidget):
         layout = QHBoxLayout()
         layout.setContentsMargins(10, 10, 10, 10)
         
-        # Информация
         info_label = QLabel(f"🎭 {self.character_data['name']} | Сессия: {self.session_data['name']}")
         info_label.setStyleSheet("font-size: 16px; font-weight: bold; color: #e67e22;")
         layout.addWidget(info_label)
@@ -177,7 +187,6 @@ class PlayerWindow(QWidget):
         layout = QVBoxLayout()
         layout.setSpacing(15)
         
-        # Заголовок
         title = QLabel("Характеристики персонажа")
         title.setAlignment(Qt.AlignCenter)
         title.setStyleSheet("font-size: 14px; font-weight: bold; color: #e67e22;")
@@ -262,7 +271,6 @@ class PlayerWindow(QWidget):
         self.inventory_list.itemDoubleClicked.connect(self.use_item)
         layout.addWidget(self.inventory_list)
         
-        # Экипировка
         equip_title = QLabel("⚔️ Экипировано")
         equip_title.setStyleSheet("font-size: 12px; font-weight: bold; color: #f39c12; margin-top: 10px;")
         layout.addWidget(equip_title)
@@ -281,14 +289,12 @@ class PlayerWindow(QWidget):
         layout.setSpacing(5)
         layout.setContentsMargins(10, 5, 10, 10)
         
-        # Чат
         self.chat_display = QTextEdit()
         self.chat_display.setReadOnly(True)
         self.chat_display.setMaximumHeight(200)
         self.chat_display.setStyleSheet("background-color: #2a2a2a;")
         layout.addWidget(self.chat_display)
         
-        # Строка ввода
         input_layout = QHBoxLayout()
         
         self.action_combo = QComboBox()
@@ -315,27 +321,50 @@ class PlayerWindow(QWidget):
         return panel
     
     def setup_socket(self):
-        socket_client.connected_signal.connect(self.on_socket_connected)
-        socket_client.disconnected_signal.connect(self.on_socket_disconnected)
-        socket_client.chat_signal.connect(self.on_chat_message)
-        socket_client.character_updated_signal.connect(self.on_character_updated)
-        socket_client.item_added_signal.connect(self.on_item_added)
-        socket_client.item_removed_signal.connect(self.on_item_removed)
+        # Подключаем сигналы к ЭКЗЕМПЛЯРУ socket_client (НЕ к классу!)
+        self.socket_client.connected_signal.connect(self.on_socket_connected)
+        self.socket_client.disconnected_signal.connect(self.on_socket_disconnected)
+        self.socket_client.chat_signal.connect(self.on_chat_message)
+        self.socket_client.character_updated_signal.connect(self.on_character_updated)
+        self.socket_client.item_added_signal.connect(self.on_item_added)
+        self.socket_client.item_removed_signal.connect(self.on_item_removed)
     
     def connect_to_session(self):
-        if not socket_client.is_connected:
-            if not socket_client.connect_to_server("localhost", 5000):
-                QMessageBox.warning(self, "Ошибка", "Не удалось подключиться к серверу")
-                return
+        from client.config_manager import config_manager
         
-        socket_client.register_player(
+        server_ip = config_manager.host
+        server_port = config_manager.port
+        
+        print(f"\n{'='*60}")
+        print(f"[PLAYER] CONNECTING TO SESSION")
+        print(f"[PLAYER] Server: {server_ip}:{server_port}")
+        print(f"[PLAYER] Session ID: {self.session_data['id']}")
+        print(f"[PLAYER] Character ID: {self.character_data['id']}")
+        print(f"[PLAYER] Character Name: {self.character_data['name']}")
+        print(f"[PLAYER] User ID: {self.user_data['id']}")
+        print(f"{'='*60}\n")
+        
+        # Устанавливаем URL
+        self.socket_client.base_url = f"http://{server_ip}:{server_port}"
+        
+        # Подключаемся через connect_player
+        result = self.socket_client.connect_player(
             self.session_data['id'],
             self.user_data['id'],
             self.user_data['username'],
             self.character_data['id'],
             self.character_data['name']
         )
-    
+        
+        if result:
+            print(f"[PLAYER] ✅ Connected successfully!")
+            self.connection_status.setText("🟢 Подключено")
+            self.socket_client.get_players()
+        else:
+            print(f"[PLAYER] ❌ Connection failed!")
+            self.connection_status.setText("🔴 Ошибка подключения")
+            QMessageBox.warning(self, "Ошибка", "Не удалось подключиться к сессии")
+
     def load_inventory(self):
         items = api_client.get_character_inventory(self.character_data['id'])
         self.inventory = items
@@ -375,28 +404,24 @@ class PlayerWindow(QWidget):
             item_data = item.get('item_data', {})
             
             if item_data.get('is_equippable'):
-                # Экипируем предмет
                 if api_client.equip_item(self.character_data['id'], item_id):
                     self.load_inventory()
-                    socket_client.send_chat(f"экипировал {item_data.get('name', 'предмет')}", "action")
+                    self.socket_client.send_chat(f"экипировал {item_data.get('name', 'предмет')}", "action")
             elif item_data.get('item_type') == 'consumable':
-                # Используем расходник
                 effects = item_data.get('effects', {})
                 
-                # Применяем эффекты
                 if 'heal_hp' in effects:
                     new_hp = min(self.character_data.get('current_hp', 10) + effects['heal_hp'],
                                 self.character_data.get('max_hp', 10))
                     self.update_character_stat('current_hp', new_hp)
-                    socket_client.send_chat(f"использовал {item_data.get('name')} и восстановил {effects['heal_hp']} HP", "action")
+                    self.socket_client.send_chat(f"использовал {item_data.get('name')} и восстановил {effects['heal_hp']} HP", "action")
                 
                 if 'heal_mp' in effects:
                     new_mp = min(self.character_data.get('current_mp', 5) + effects['heal_mp'],
                                 self.character_data.get('max_mp', 5))
                     self.update_character_stat('current_mp', new_mp)
-                    socket_client.send_chat(f"использовал {item_data.get('name')} и восстановил {effects['heal_mp']} MP", "action")
+                    self.socket_client.send_chat(f"использовал {item_data.get('name')} и восстановил {effects['heal_mp']} MP", "action")
                 
-                # Удаляем использованный предмет
                 api_client.remove_item_from_character(self.character_data['id'], item_id)
                 self.load_inventory()
     
@@ -408,28 +433,23 @@ class PlayerWindow(QWidget):
         item_id = current.data(Qt.UserRole)
         if api_client.unequip_item(self.character_data['id'], item_id):
             self.load_inventory()
-            socket_client.send_chat("снял предмет", "action")
+            self.socket_client.send_chat("снял предмет", "action")
     
     def update_character_stat(self, stat_name, value):
         updates = {stat_name: value}
-        socket_client.gm_update_character(self.character_data['id'], updates)
-        
-        # Обновляем локальные данные
+        api_client.update_character(self.character_data['id'], updates)
         self.character_data[stat_name] = value
         self.update_stats_display()
     
     def update_stats_display(self):
-        # Обновляем HP
         self.hp_label.setText(f"{self.character_data.get('current_hp', 10)} / {self.character_data.get('max_hp', 10)}")
         hp_percent = (self.character_data.get('current_hp', 10) / self.character_data.get('max_hp', 10)) * 100
         self.hp_bar.setValue(int(hp_percent))
         
-        # Обновляем MP
         self.mp_label.setText(f"{self.character_data.get('current_mp', 5)} / {self.character_data.get('max_mp', 5)}")
         mp_percent = (self.character_data.get('current_mp', 5) / self.character_data.get('max_mp', 5)) * 100
         self.mp_bar.setValue(int(mp_percent))
         
-        # Обновляем атрибуты
         self.strength_label.setText(str(self.character_data.get('strength', 10)))
         self.dexterity_label.setText(str(self.character_data.get('dexterity', 10)))
         self.intelligence_label.setText(str(self.character_data.get('intelligence', 10)))
@@ -438,7 +458,6 @@ class PlayerWindow(QWidget):
         self.experience_label.setText(str(self.character_data.get('experience', 0)))
     
     def refresh_data(self):
-        # Обновляем данные персонажа
         characters = api_client.get_my_characters(self.user_data['id'])
         for char in characters:
             if char['id'] == self.character_data['id']:
@@ -472,7 +491,6 @@ class PlayerWindow(QWidget):
             prefix = "🎲 "
         
         self.chat_display.append(f"[{timestamp}] {character}: {prefix}{message}")
-        
         scrollbar = self.chat_display.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
     
@@ -482,7 +500,6 @@ class PlayerWindow(QWidget):
                 self.character_data[key] = value
             self.update_stats_display()
             
-            # Логируем
             if 'current_hp' in data['updates']:
                 self.chat_display.append(f"📊 ГМ изменил ваше HP: {data['updates']['current_hp']}")
     
@@ -509,15 +526,15 @@ class PlayerWindow(QWidget):
             "🎲 Бросок кубика": "dice"
         }
         
-        socket_client.send_chat(message, action_map.get(action_type, "chat"))
+        self.socket_client.send_chat(message, action_map.get(action_type, "chat"))
         self.message_input.clear()
     
     def exit_session(self):
         reply = QMessageBox.question(self, "Выход", "Вы уверены, что хотите выйти из игры?",
-                                     QMessageBox.Yes | QMessageBox.No)
+                                    QMessageBox.Yes | QMessageBox.No)
         if reply == QMessageBox.Yes:
-            # Открепляем персонажа от сессии
-            api_client.detach_character_from_session(self.character_data['id'])
+            # Выходим из сессии
             api_client.leave_session(self.session_data['id'], self.user_data['id'])
-            socket_client.disconnect()
+            if hasattr(self, 'socket_client'):
+                self.socket_client.disconnect()
             self.close()

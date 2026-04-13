@@ -1,1 +1,7 @@
-#Что тут нужно
+# requirements.txt
+Flask==2.3.3
+Flask-SQLAlchemy==3.1.1
+Flask-CORS==4.0.0
+requests==2.31.0
+PyQt5==5.15.9
+Werkzeug==2.3.7
